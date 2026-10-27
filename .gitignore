@@ -1,0 +1,17 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local uploads and generated data
+uploads/
+instance/
+
+# OS / editor files
+.DS_Store
+.vscode/
+.idea/
