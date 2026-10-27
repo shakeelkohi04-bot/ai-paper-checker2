@@ -1,18 +1,22 @@
+import base64
 import io
 import json
 import os
+import re
 
 import streamlit as st
 from docx import Document
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
 st.set_page_config(page_title="AI Exam Paper Checker", page_icon="📝", layout="wide")
 
-DEFAULT_MODEL = "gemini-3.8-flash"  # change in the sidebar if your key uses another model
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_MODEL = "openrouter/free"  # random free model; use one specific model slug for consistent grading
 
 PROMPT = """You are a fair and consistent exam paper examiner.
-Check the STUDENT PAPER below. If a MARKING SCHEME / ANSWER KEY is provided, grade strictly against it.
+Check the STUDENT PAPER below. It may contain only answers listed by question number, without the question text.
+In that case, match each answer to its question using the QUESTION PAPER or the MARKING SCHEME / ANSWER KEY.
+If a MARKING SCHEME / ANSWER KEY is provided, grade strictly against it.
 If none is provided, use your own subject knowledge to judge the correctness of each answer.
 
 Rules:
@@ -40,12 +44,12 @@ TOTAL_MARKS: {TOTAL}
 
 
 def get_api_key() -> str | None:
-    
+ 
     try:
-        key = st.secrets.get("GEMINI_API_KEY")
+        key = st.secrets.get("OPENROUTER_API_KEY")
     except Exception:
         key = None
-    return key or os.getenv("GEMINI_API_KEY")
+    return key or os.getenv("OPENROUTER_API_KEY")
 
 
 def docx_to_text(data: bytes) -> str:
@@ -58,35 +62,46 @@ def docx_to_text(data: bytes) -> str:
 
 
 def to_parts(uploaded, label: str) -> list:
-    
+   
     data = uploaded.getvalue()
     name = uploaded.name.lower()
     if name.endswith(".pdf"):
-        # Gemini reads PDFs natively, including scanned pages
-        return [f"{label}:", types.Part.from_bytes(data=data, mime_type="application/pdf")]
+        b64 = base64.b64encode(data).decode("utf-8")
+        return [
+            {"type": "text", "text": f"{label}:"},
+            {"type": "file", "file": {"filename": uploaded.name, "file_data": f"data:application/pdf;base64,{b64}"}},
+        ]
     if name.endswith(".docx"):
-        return [f"{label}:\n{docx_to_text(data)}"]
-    return [f"{label}:\n{data.decode('utf-8', errors='ignore')}"]
+        return [{"type": "text", "text": f"{label}:\n{docx_to_text(data)}"}]
+    return [{"type": "text", "text": f"{label}:\n{data.decode('utf-8', errors='ignore')}"}]
 
 
-def evaluate(api_key, model, paper, scheme, total_marks, extra_rules) -> dict:
-    client = genai.Client(api_key=api_key)
+def parse_json(text: str) -> dict:
+   
+    text = re.sub(r"```(?:json)?", "", text or "").strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end == -1:
+        raise json.JSONDecodeError("No JSON found", text, 0)
+    return json.loads(text[start : end + 1])
+
+
+def evaluate(api_key, model, paper, scheme, total_marks, extra_rules, questions=None) -> dict:
+    client = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=api_key)
     extra = f"- Extra instructions from the teacher: {extra_rules}" if extra_rules else ""
     prompt = PROMPT.replace("{TOTAL}", str(total_marks)).replace("{EXTRA}", extra)
 
-    contents = [prompt] + to_parts(paper, "STUDENT PAPER")
+    contents = [{"type": "text", "text": prompt}] + to_parts(paper, "STUDENT PAPER")
+    if questions:
+        contents += to_parts(questions, "QUESTION PAPER")
     if scheme:
         contents += to_parts(scheme, "MARKING SCHEME / ANSWER KEY")
 
-    response = client.models.generate_content(
+    response = client.chat.completions.create(
         model=model,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.2,
-        ),
+        messages=[{"role": "user", "content": contents}],
+        temperature=0.2,
     )
-    return json.loads(response.text)
+    return parse_json(response.choices[0].message.content)
 
 
 def grade_letter(pct: float) -> str:
@@ -98,30 +113,32 @@ def grade_letter(pct: float) -> str:
 
 # ---------------- UI ----------------
 st.title("📝 AI Exam Paper Checker")
-st.caption("Upload a student's exam paper and get a score with feedback, powered by Gemini.")
+st.caption("Upload a student's exam paper and get a score with feedback, powered by OpenRouter.")
 
 with st.sidebar:
     st.header("Settings")
-    api_key = get_api_key() or st.text_input("Gemini API key", type="password")
-    model_name = st.text_input("Gemini model", value=DEFAULT_MODEL)
+    api_key = get_api_key() or st.text_input("OpenRouter API key", type="password")
+    model_name = st.text_input("OpenRouter model", value=DEFAULT_MODEL)
     total_marks = st.number_input("Total marks", min_value=1, value=100, step=1)
     extra_rules = st.text_area("Extra grading instructions (optional)", placeholder="e.g. Be lenient on spelling.")
     st.info("AI scores can be wrong. Review the result before using it as a final grade.")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 with col1:
-    paper = st.file_uploader("Student paper (required)", type=["pdf", "docx"])
+    paper = st.file_uploader("Student paper / answer sheet (required)", type=["pdf", "docx"])
 with col2:
+    questions = st.file_uploader("Question paper (optional)", type=["pdf", "docx", "txt"])
+with col3:
     scheme = st.file_uploader("Marking scheme / answer key (optional)", type=["pdf", "docx", "txt"])
 
 if st.button("Check paper", type="primary", disabled=paper is None):
     if not api_key:
-        st.error("Please add your Gemini API key in the sidebar.")
+        st.error("Please add your OpenRouter API key in the sidebar.")
         st.stop()
 
     with st.spinner("Checking the paper..."):
         try:
-            result = evaluate(api_key, model_name, paper, scheme, total_marks, extra_rules)
+            result = evaluate(api_key, model_name, paper, scheme, total_marks, extra_rules, questions)
         except json.JSONDecodeError:
             st.error("The AI returned an unreadable response. Please try again.")
             st.stop()
