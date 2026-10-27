@@ -9,7 +9,7 @@ from google.genai import types
 
 st.set_page_config(page_title="AI Exam Paper Checker", page_icon="📝", layout="wide")
 
-DEFAULT_MODEL = "gemini-2.5-flash"  # change in the sidebar if your key uses another model
+DEFAULT_MODEL = "gemini-3.8-flash"  # change in the sidebar if your key uses another model
 
 PROMPT = """You are a fair and consistent exam paper examiner.
 Check the STUDENT PAPER below. If a MARKING SCHEME / ANSWER KEY is provided, grade strictly against it.
