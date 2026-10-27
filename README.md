@@ -1,6 +1,6 @@
 # 📝 AI Exam Paper Checker
 
-A Streamlit app that uses the Google Gemini API to check a student's exam paper. Upload the paper as a PDF or DOCX file and get a total score, percentage, grade, question-wise marks, strengths, and weaknesses.
+A Streamlit app that uses the OpenRouter API to check a student's exam paper. Upload the paper as a PDF or DOCX file and get a total score, percentage, grade, question-wise marks, strengths, and weaknesses.
 
 ## Features
 
@@ -26,14 +26,14 @@ A Streamlit app that uses the Google Gemini API to check a student's exam paper.
    ```bash
    pip install -r requirements.txt
    ```
-4. Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey).
+4. Create a free account and API key at [OpenRouter](https://openrouter.ai/keys).
 5. Provide the key in **one** of these ways:
    - Type it into the sidebar when the app runs, or
    - Create `.streamlit/secrets.toml` containing:
      ```toml
-     GEMINI_API_KEY = "your-key-here"
+     OPENROUTER_API_KEY = "your-key-here"
      ```
-   - Or set an environment variable named `GEMINI_API_KEY`.
+   - Or set an environment variable named `OPENROUTER_API_KEY`.
 
 ## Run
 
@@ -46,8 +46,9 @@ Then open the local URL shown in the terminal.
 ## Notes
 
 - **Never commit your API key.** `.gitignore` already excludes `.streamlit/secrets.toml` and `.env`.
-- The default model is `gemini-2.5-flash`. If your key does not support it, change the model name in the sidebar.
-- The free tier has rate limits, so very large papers or many quick uploads may fail. Wait a minute and try again.
+- The default model is `openrouter/free`, which picks a random free model for each request. For consistent grading, choose one specific model from the [OpenRouter models page](https://openrouter.ai/models?pricing=free) and paste its slug (for example, one ending in `:free`) into the sidebar.
+- Free models have rate limits (a small number of requests per minute and per day), so many quick uploads may fail. Wait a minute and try again.
+- PDFs are sent to OpenRouter as files. Scanned or handwritten PDFs need a model that can read images, and some PDF parsing engines on OpenRouter are paid.
 - AI grading can be inconsistent or wrong. Treat the result as an assistant's opinion and review it before using it as a final grade.
 
 ## Project structure
